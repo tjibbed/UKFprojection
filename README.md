@@ -1,5 +1,5 @@
 # UKFprojection
-Projection of ICU bed occupancy in Uniklinik Freiburg
+Projection of ICU bed occupancy in the University Medical Center Freiburg (Uniklinik Freiburg:  UKF)
 
 Provided is the R script we used to produce forcasts of (ICU) bed demand in the University Medical Center Freiburg. 
 
