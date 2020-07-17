@@ -297,6 +297,28 @@ getRePlot2<-function(runResults,xlimits=NULL,ylimits=NULL){
   # theme(legend=none)
 }
 
+getReShadedPlot<-function(runResults,xlimits=NULL,ylimits=NULL){
+  if(is.null(ylimits)){
+    ylimits=c(0,max(runResults$ReEsti))
+  }
+  ggplot(as.data.frame(
+    runResults[(!is.na(runResults$ReEsti))&(runResults$underlying!=0),c("time","ReEsti")] %>% 
+    group_by(time)%>%
+    summarise(
+      meanRe=mean(ReEsti),
+      medianRe=median(ReEsti),
+      low=quantile(ReEsti,probs=0.05),
+      high=quantile(ReEsti,probs=0.95)
+    )
+  ))+
+  geom_ribbon(aes(x=time,ymin=low,ymax=pmin(high,ylimits[[2]])
+                  ),fill="#0000FF44")+
+  geom_line(aes(x=time,y=meanRe))+
+  scale_y_continuous(limits=ylimits)+
+  # geom_line(aes(x=time,y=medianRe),colour="blue")+
+  theme_linedraw()
+}
+
 getSprinklePlotIQR<-function(runResults,xlimits=NULL,ylimits=NULL,cutDate=NULL){
   summaryRes<-runResults %>%
     group_by(time) %>%

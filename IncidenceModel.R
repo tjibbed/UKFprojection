@@ -1,4 +1,17 @@
-getIncCases<-function(cumCases){cumCases-c(0,cumCases[-length(cumCases)])}
+
+removeNegatives<-function(cCases,forward=FALSE){
+  if(forward) {
+    return(unlist(lapply(1:length(cCases),function(x) max(cCases[1:x]))))
+  } else {
+    return(unlist(lapply(1:length(cCases),function(x) min(cCases[x:length(cCases)]))))
+  }
+}
+
+getIncCases<-function(cCases){
+  cCases<-removeNegatives(cCases)
+  cCases-c(0,cCases[-length(cCases)])
+}
+
 getMoveAv<-function(l,w){
   starts<-1:(length(l)-w)
   return(c(rep(0,floor(w/2)),unlist(lapply(starts,function(x)mean(l[x:(x+w)])))))
@@ -7,28 +20,31 @@ getMoveAv<-function(l,w){
 produceRe<-function(epicurve,serialDistr){
   setToOne<-function(l){l/sum(l)}
   setFirstToOne<-function(l){l/(l[1])}
-  epicurve<-epicurve[which(epicurve>0)[1]:length(epicurve)]
+  
+  epicurve<-epicurve[which(epicurve>0)[1]:length(epicurve)] #First entry needs to be a case. 
   
   if(length(serialDistr)<length(epicurve))
     serialDistr<-c(serialDistr,rep(0,length(epicurve)-length(serialDistr)))
   if(length(serialDistr)>length(epicurve))
     serialDistr<-serialDistr[1:length(epicurve)]
-  
   obsProb<-setFirstToOne(rev(cumsum(serialDistr[-length(serialDistr)])))
   
   fGetInf<-function(d) sample(d-(1:(d-1)),epicurve[d],replace=TRUE,prob=serialDistr[1:(d-1)]*rev(epicurve[1:(d-1)]))
   genInfTimes<-unlist(lapply(2:length(epicurve),fGetInf))
-  infTimes<-unlist(lapply(1:length(epicurve),function(x)length(genInfTimes[genInfTimes==x])))[-length(epicurve)]
-  resInf<-unlist(lapply(1:length(obsProb),function(x)if(infTimes[x]==0){
-    0
-  }else{
-    rnbinom(1,infTimes[x],obsProb[x])
-  }
-  ))
+  infTimes<-unlist(lapply(1:length(epicurve),
+                          function(x)
+                            length(genInfTimes[genInfTimes==x])))[-length(epicurve)]
+  resInf<-unlist(lapply(1:length(obsProb),
+                        function(x)if(infTimes[x]==0){
+                          0
+                        }else{
+                          rnbinom(1,infTimes[x],obsProb[x])
+                        }
+                ))
   
   esti<-as.data.frame(t((resInf+infTimes)/epicurve[-length(epicurve)]))
-  
   if(sum(!(is.na(esti)==(epicurve[-length(epicurve)]==0)))>0)stop("There is an NA error, please solve")
+  
   esti[is.na(esti)]<-0
   
   return(esti)
@@ -103,6 +119,43 @@ convertCurveToReported<-function(curve,delayDistr,underreporting=1,exclstarter=c
   }
   if(replaceStarter)reportCurve[1:length(exclstarter)]<-exclstarter
   return(reportCurve)
+}
+
+
+
+
+singleRtEsti<-function(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=150,underreporting=1,runNum=1){
+  lastday<-((startDate+length(epicurve))-1) # last day in the epi curve
+  #print(lastday)
+  if(lastday!=(currentDay-1)){ #last day isn't yesterday
+    if(lastday>(currentDay-1)){
+      epicurve<-epicurve[1:(as.numeric(difftime(currentDay,startDate)))]
+      warning("Dates didn't align, fixed by shortening epi curve.") 
+    }
+    if(lastday<(currentDay-1)) stop("Error: trying to estimate further than the epiCurve. Parameter currentDay is leading, please provide proper epi curve, or other currentDay parameter.")
+  }
+  lastday<-((startDate+length(epicurve))-1) # last day in the epi curve
+  if(lastday!=(currentDay-1)) {
+    print(lastday)
+    stop("This didn't fix it") 
+  }
+  
+  starterCurve<-reconstructBackwards(epicurve,delayRep,underreporting=underreporting)
+  ReEsti<-as.numeric(produceRe(starterCurve,serialinterval))
+  ReEsti<-c(rep(NA,-1+length(starterCurve)-length(ReEsti)),ReEsti,NA)
+  return(data.frame(
+    underlying=starterCurve,
+    ReEsti=(ReEsti),
+    time=startDate+(1:length(ReEsti))-(length(delayRep)),
+    currentDay=currentDay,
+    runNum=runNum
+  ))
+}
+
+
+multiRtEsti<-function(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=150,underreporting=1,numRuns=10){
+  res<-lapply(1:numRuns,function(x)singleRtEsti(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=runLength,underreporting=underreporting,runNum=x))
+  return(Reduce(rbind,res))
 }
 
 singleRun<-function(epicurve,population,delayRep,serialinterval,runLength=150,underreporting=1){
