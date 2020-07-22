@@ -259,3 +259,47 @@ multiInciRun<-function(epicurve,startDate,currentDay,population,delayRep,seriali
     return(runres)
   })),runPassed==TRUE)
 }
+
+readRKIdata<-function(){
+  return(read.csv("https://opendata.arcgis.com/datasets/dd4580c810204019a7b8eb3e0b329dd6_0.csv"))
+}
+readRKIpopLK<-function(){
+  popLK<-read.csv("https://opendata.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0.csv")
+}
+
+getInciForKreiseRKI<-function(l,dataRKI=NULL,popLK=NULL, fromDate=NULL,untilDate=NULL,loadData=FALSE){
+  if(loadData){
+    #https://npgeo-corona-npgeo-de.hub.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0/data?geometry=-31.470%2C46.269%2C52.378%2C55.886&selectedAttribute=cases7_per_100k
+    if(is.null(popLK)) popLK<-read.csv("https://opendata.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0.csv")
+    #https://npgeo-corona-npgeo-de.hub.arcgis.com/datasets/dd4580c810204019a7b8eb3e0b329dd6_0
+    if(is.null(dataRKI)) dataRKI<-read.csv("Resources/RKI_COVID19-1.csv")
+  } else {
+    if(is.null(popLK)|is.null(popLK))stop("Please provide population data (popLK) and/or case data (dataRKI). Alternatively, set loadData=True to load data from RKI.")
+  }
+  dataRKI$popSize<-unlist(lapply(1:nrow(dataRKI),function(x) (popLK[which(popLK$AGS==dataRKI$IdLandkreis[[x]])[1],"EWZ"])))
+  thisSet<-subset(dataRKI,Landkreis %in% l)
+  RKIinci<-as.data.frame(
+    thisSet%>% 
+      group_by(Meldedatum) %>%
+      summarise(cases=sum(AnzahlFall))
+  )
+  totPop<-(sum(unique(thisSet[,c("IdLandkreis","popSize")])$popSize))
+  if(is.null(untilDate)) untilDate<-max(as.Date(RKIinci$Meldedatum))
+  if(is.null(fromDate)) fromDate<-min(as.Date(RKIinci$Meldedatum))
+  RKIinciTempList<-Reduce(rbind,lapply(1:as.numeric(untilDate-fromDate),
+                                       function(x) return(data.frame(Date=(fromDate+x),
+                                                                     all=sum(RKIinci[as.numeric(as.Date(RKIinci$Meldedatum)-(fromDate))==x,"cases"])
+                                       )
+                                       )
+  ))
+  
+  RKIinciTempList$cLastweek<-c(rep(0,6),unlist(lapply(7:nrow(RKIinciTempList),function(x)sum(RKIinciTempList[x-0:6,"all"]))))
+  RKIinciTempList$RKIcut<-100000*(RKIinciTempList$cLastweek/totPop)
+  RKIinciTempList$thisPop<-totPop
+  return(RKIinciTempList)
+}
+
+dataRKI<-readRKIdata()
+dataPopRKI<-readRKIpopLK()
+
+getInciForKreiseRKI(c("SK Freiburg i.Breisgau","LK Emmendingen","LK Breisgau-Hochschwarzwald"),dataRKI = dataRKI,popLK = dataPopRKI)
