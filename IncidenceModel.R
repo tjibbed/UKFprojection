@@ -260,35 +260,78 @@ multiInciRun<-function(epicurve,startDate,currentDay,population,delayRep,seriali
   })),runPassed==TRUE)
 }
 
-readRKIdata<-function(){
-  return(read.csv("https://opendata.arcgis.com/datasets/dd4580c810204019a7b8eb3e0b329dd6_0.csv"))
-}
-readRKIpopLK<-function(){
-  popLK<-read.csv("https://opendata.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0.csv")
+readLandKreisNames<-function(){
+  httr::set_config(httr::config(http_version = 0))
+  RKIgotKreise<-GET("https://services7.arcgis.com/mOBPykOjAyBO2ZKk/arcgis/rest/services/RKI_Landkreisdaten/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=false&outSR=4326&f=json")
+  tempLKdata<-as.data.frame(fromJSON(content(RKIgotKreise,"text"))$features$attributes)
+  LKcodes=unique(tempLKdata[,c("GEN","AGS")])
+  LKcodes<<-(LKcodes[!is.na(LKcodes$AGS),])
+  return(LKcodes)
 }
 
-getInciForKreiseRKI<-function(l,dataRKI=NULL,popLK=NULL, fromDate=NULL,untilDate=NULL,loadData=FALSE){
+readRKIdataSingleLK<-function(LK){#Loading a single Landkreis
+  if(!(LK %in% LKcodes$AGS)){
+    found=FALSE
+    if(LK %in% LKcodes$GEN){
+      LK<-LKcodes[LKcodes$GEN==LK,"AGS"]
+      found=T
+    } else {
+      detectedPattern<-which(str_detect(LKcodes$GEN,LK))
+      if(length(detectedPattern)>1){
+        stopstring<-paste0("Landkreis identifier ",LK," ambivalent, multiple matches: ")
+        for(ii in 1:length(detectedPattern)) stopstring<-paste0(stopstring,"\n -",LKcodes[detectedPattern[[ii]],"GEN"])
+        
+        stop(stopstring)
+      }
+      if(length(detectedPattern)==1){
+        LK<-LKcodes[detectedPattern[[1]],"AGS"]
+        found=T
+      }
+    }
+    if(!found) stop(paste0("Didn't find identifier: ",LK)) 
+  }
+  RKIgot<-GET(paste0("https://services7.arcgis.com/mOBPykOjAyBO2ZKk/arcgis/rest/services/RKI_COVID19/FeatureServer/0/query?where=IdLandkreis%20%3D%20'",
+                     LK,
+                     "'&outFields=*&outSR=4326&f=json"))
+  tempRKIdataJSON<-fromJSON(content(RKIgot,"text"))
+  tempDF<-as.data.frame(tempRKIdataJSON$features$attributes)
+  tempDF$Meldedatum<-as.Date("1970-01-01")+(tempDF$Meldedatum/(3600*24*1000))
+  tempDF$Refdatum<-as.Date("1970-01-01")+(tempDF$Refdatum/(3600*24*1000))
+  tempDF$Datenstand<-as.Date(substr(tempDF$Datenstand,0,10),format="%d.%m.%Y")
+  #print(as.Date("1970-01-01")+max(RKIinci$Meldedatum)/(3600*24*1000))
+  return(tempDF)
+}
+
+readRKIdatamultiLK<-function(LKs){#Loading multiple Landkreis
+  Reduce(rbind,lapply(LKs,readRKIdataSingleLK))
+}
+
+readRKIpopLK<-function(){
+    RKIgotKreise<-GET("https://services7.arcgis.com/mOBPykOjAyBO2ZKk/arcgis/rest/services/RKI_Landkreisdaten/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=false&outSR=4326&f=json")
+    return(fromJSON(RKIgotKreise))
+}
+
+getInciForKreiseRKI<-function(l,popLK=NULL, fromDate=NULL,untilDate=NULL,loadData=FALSE){
   if(loadData){
     #https://npgeo-corona-npgeo-de.hub.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0/data?geometry=-31.470%2C46.269%2C52.378%2C55.886&selectedAttribute=cases7_per_100k
     if(is.null(popLK)) popLK<-read.csv("https://opendata.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0.csv")
-    #https://npgeo-corona-npgeo-de.hub.arcgis.com/datasets/dd4580c810204019a7b8eb3e0b329dd6_0
-    if(is.null(dataRKI)) dataRKI<-read.csv("Resources/RKI_COVID19-1.csv")
   } else {
-    if(is.null(popLK)|is.null(popLK))stop("Please provide population data (popLK) and/or case data (dataRKI). Alternatively, set loadData=True to load data from RKI.")
+    if(is.null(popLK))stop("Please provide population data (popLK) and/or case data (dataRKI). Alternatively, set loadData=True to load data from RKI.")
   }
-  dataRKI$popSize<-unlist(lapply(1:nrow(dataRKI),function(x) (popLK[which(popLK$AGS==dataRKI$IdLandkreis[[x]])[1],"EWZ"])))
-  thisSet<-subset(dataRKI,Landkreis %in% l)
+  thisSet<-readRKIdatamultiLK(l)
+  totPop<-sum(unlist(lapply(unique(thisSet$IdLandkreis), function(x) ((popLK[!is.na(popLK$AGS),"EWZ"][popLK[!is.na(popLK$AGS),"AGS"]==as.numeric(x)])))))
+
   RKIinci<-as.data.frame(
     thisSet%>% 
       group_by(Meldedatum) %>%
       summarise(cases=sum(AnzahlFall))
   )
-  totPop<-(sum(unique(thisSet[,c("IdLandkreis","popSize")])$popSize))
-  if(is.null(untilDate)) untilDate<-max(as.Date(RKIinci$Meldedatum))
-  if(is.null(fromDate)) fromDate<-min(as.Date(RKIinci$Meldedatum))
+  if(is.null(untilDate)) untilDate<-max(thisSet$Datenstand)
+  if(is.null(fromDate)) fromDate<-min(RKIinci$Meldedatum)
+  
   RKIinciTempList<-Reduce(rbind,lapply(1:as.numeric(untilDate-fromDate),
                                        function(x) return(data.frame(Date=(fromDate+x),
-                                                                     all=sum(RKIinci[as.numeric(as.Date(RKIinci$Meldedatum)-(fromDate))==x,"cases"])
+                                                                     all=sum(RKIinci[as.numeric(as.Date(RKIinci$Meldedatum,origin=as.Date("1900-01-01"))-(fromDate))==x,"cases"])
                                        )
                                        )
   ))
@@ -299,7 +342,3 @@ getInciForKreiseRKI<-function(l,dataRKI=NULL,popLK=NULL, fromDate=NULL,untilDate
   return(RKIinciTempList)
 }
 
-dataRKI<-readRKIdata()
-dataPopRKI<-readRKIpopLK()
-
-getInciForKreiseRKI(c("SK Freiburg i.Breisgau","LK Emmendingen","LK Breisgau-Hochschwarzwald"),dataRKI = dataRKI,popLK = dataPopRKI)
