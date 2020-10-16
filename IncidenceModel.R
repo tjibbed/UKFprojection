@@ -17,7 +17,7 @@ getMoveAv<-function(l,w){
   return(c(rep(0,floor(w/2)),unlist(lapply(starts,function(x)mean(l[x:(x+w)])))))
 }
 
-produceRe<-function(epicurve,serialDistr){
+produceInfectorInfectee<-function(epicurve,serialDistr,currentDay){
   setToOne<-function(l){l/sum(l)}
   setFirstToOne<-function(l){l/(l[1])}
   
@@ -38,16 +38,27 @@ produceRe<-function(epicurve,serialDistr){
                         function(x)if(infTimes[x]==0){
                           0
                         }else{
-                          rnbinom(1,infTimes[x],obsProb[x])
+                          rnbinom(1,infTimes[x],c(obsProb[x]))
                         }
-                ))
+  ))
+  #print(paste0("fPII: resInf ",length(resInf)," epicurve ",length(epicurve) ))
+  infInfDF<-data.frame(
+             time=currentDay-rev(1:length(resInf)),
+             infectors=epicurve[-length(epicurve)],
+             infectees=resInf+infTimes
+             )
+
+  return(infInfDF)
+}
+
+produceRe<-function(epicurve,serialDistr,currentDay){
+  infInfDF<-produceInfectorInfectee(epicurve,serialDistr,currentDay)
+
+  infInfDF$ReEsti<-(infInfDF$infectees/infInfDF$infectors)
+  if(sum(!(is.na(infInfDF$ReEsti)==(infInfDF$infectors==0)))>0)stop("There is an NA error, please solve")
+  infInfDF$ReEsti[is.na(infInfDF$ReEsti)]<-0
   
-  esti<-as.data.frame(t((resInf+infTimes)/epicurve[-length(epicurve)]))
-  if(sum(!(is.na(esti)==(epicurve[-length(epicurve)]==0)))>0)stop("There is an NA error, please solve")
-  
-  esti[is.na(esti)]<-0
-  
-  return(esti)
+  return(infInfDF)
 }
 
 reconstructBackwards<-function(curve,delayDistr,underreporting=1){
@@ -121,7 +132,35 @@ convertCurveToReported<-function(curve,delayDistr,underreporting=1,exclstarter=c
   return(reportCurve)
 }
 
+singleInfInfCounts<-function(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=150,underreporting=1,runNum=1){
+  lastday<-((startDate+length(epicurve))-1) # last day in the epi curve
+  #print(lastday)
+  if(lastday!=(currentDay-1)){ #last day isn't yesterday
+    if(lastday>(currentDay-1)){
+      epicurve<-epicurve[1:(as.numeric(difftime(currentDay,startDate)))]
+      warning("Dates didn't align, fixed by shortening epi curve.") 
+    }
+    if(lastday<(currentDay-1)) stop("Error: trying to estimate further than the epiCurve. Parameter currentDay is leading, please provide proper epi curve, or other currentDay parameter.")
+  }
+  lastday<-((startDate+length(epicurve))-1) # last day in the epi curve
+  if(lastday!=(currentDay-1)) {
+    print(lastday)
+    stop("This didn't fix it") 
+  }
+  
+  starterCurve<-reconstructBackwards(epicurve,delayRep,underreporting=underreporting)
+  #main reconstructor runs here:
+  resDF<-(produceInfectorInfectee(starterCurve,serialinterval,currentDay))
+  #resDF$time<-resDF$day
+  resDF$currentDay<-currentDay
+  resDF$runNum<-runNum
+  return(resDF)
+}
 
+multiInfInfCounts<-function(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=150,underreporting=1,numRuns=10){
+  res<-lapply(1:numRuns,function(x)singleInfInfCounts(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=runLength,underreporting=underreporting,runNum=x))
+  return(Reduce(rbind,res))
+}
 
 
 singleRtEsti<-function(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=150,underreporting=1,runNum=1){
@@ -139,23 +178,30 @@ singleRtEsti<-function(epicurve,startDate,currentDay,delayRep,serialinterval,run
     print(lastday)
     stop("This didn't fix it") 
   }
-  
+
   starterCurve<-reconstructBackwards(epicurve,delayRep,underreporting=underreporting)
-  ReEsti<-as.numeric(produceRe(starterCurve,serialinterval))
-  ReEsti<-c(rep(NA,-1+length(starterCurve)-length(ReEsti)),ReEsti,NA)
-  return(data.frame(
-    underlying=starterCurve,
-    ReEsti=(ReEsti),
-    time=startDate+(1:length(ReEsti))-(length(delayRep)),
-    currentDay=currentDay,
-    runNum=runNum
-  ))
+  ReEsti<-produceRe(starterCurve,serialinterval,currentDay)
+  
+  ReEsti$runNum<-runNum
+  ReEsti$currentDay<-currentDay
+  ReEsti$underlying=ReEsti$infectors
+  return(ReEsti)
 }
 
 
 multiRtEsti<-function(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=150,underreporting=1,numRuns=10){
   res<-lapply(1:numRuns,function(x)singleRtEsti(epicurve,startDate,currentDay,delayRep,serialinterval,runLength=runLength,underreporting=underreporting,runNum=x))
-  return(Reduce(rbind,res))
+  res<-Reduce(rbind,res)
+  
+  meanRtTime<-as.data.frame(
+    res[res$infectors!=0,]%>% 
+      group_by(time)%>%
+      summarise(meanRt=mean(ReEsti,na.rm = T))
+  )
+  rownames(meanRtTime)<-meanRtTime$time
+  res$meanRt<-meanRtTime[as.character(res$time),"meanRt"]
+  
+  return(res)
 }
 
 singleRun<-function(epicurve,population,delayRep,serialinterval,runLength=150,underreporting=1){
@@ -270,6 +316,7 @@ readLandKreisNames<-function(){
 }
 
 readRKIdataSingleLK<-function(LK){#Loading a single Landkreis
+
   if(!(LK %in% LKcodes$AGS)){
     found=FALSE
     if(LK %in% LKcodes$GEN){
