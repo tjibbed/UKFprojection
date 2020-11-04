@@ -102,7 +102,7 @@ getBedAllLinePlot<-function(runResults,startD=as.Date("2020-01-10"),xlimits=NULL
     theme_minimal()
 }
 
-getBedShadedPlot<-function(runResults,startD=as.Date("2020-01-10"),bothObs=NULL,ICUobs=NULL, Hospobs = NULL,xlimits=NULL,ylimits=NULL,cutDate=NULL){
+getBedShadedPlot<-function(runResults,startD=as.Date("2020-01-10"),plotAll=FALSE,bothObs=NULL,ICUobs=NULL, Hospobs = NULL,xlimits=NULL,ylimits=NULL,cutDate=NULL){
   if(is.null(cutDate)) cutDate<-max(runResults$time)
   if(is.null(xlimits)){
     xlimits=c(min(runResults$time),max(runResults$time))
@@ -110,12 +110,16 @@ getBedShadedPlot<-function(runResults,startD=as.Date("2020-01-10"),bothObs=NULL,
   thisRunInfo<-extractRunInfo(runResults)
   
   ggplot(thisRunInfo)+
+    (if(plotAll) geom_ribbon(aes(x=startD+time-1,ymin=allTotal025,ymax=pmin(allTotal075,ylimits[[2]])),fill="#00000044"))+
+    (if(plotAll) geom_ribbon(aes(x=startD+time-1,ymin=allTotal005,ymax=pmin(allTotal095,ylimits[[2]])),fill="#00000044"))+
     geom_ribbon(aes(x=startD+time-1,ymin=hospTotal025,ymax=pmin(hospTotal075,ylimits[[2]])),fill="#0000FF44")+
     geom_ribbon(aes(x=startD+time-1,ymin=hospTotal005,ymax=pmin(hospTotal095,ylimits[[2]])),fill="#0000FF44")+
     geom_ribbon(aes(x=startD+time-1,ymin=icuTotal025,ymax=pmin(icuTotal075,ylimits[[2]])),fill="#FF000044")+
     geom_ribbon(aes(x=startD+time-1,ymin=icuTotal005,ymax=pmin(icuTotal095,ylimits[[2]])),fill="#FF000044")+
+    (if(plotAll) geom_line(aes(x=startD+time-1,y=allTotal050),color="black"))+
     geom_line(aes(x=startD+time-1,y=hospTotal050),color="blue")+
     geom_line(aes(x=startD+time-1,y=icuTotal050),color="red")+
+    
     (if(!is.null(bothObs)) geom_point(data=subset(bothObs,time<=cutDate),aes(x=time,y=timelineICU),pch=21, size=2,color="black",fill="#FF0000FF"))+
     (if(!is.null(bothObs)) geom_point(data=subset(bothObs,time<=cutDate),aes(x=time,y=timelineGW),pch=21, size=2,color="black",fill="#0000FFFF"))+
     (if(!is.null(bothObs)) geom_point(data=subset(bothObs,time>cutDate),aes(x=time,y=timelineICU),pch=21, size=2,color="#FF000080",fill="#00000000"))+
@@ -323,7 +327,7 @@ getSprinklePlotIQR<-function(runResults,xlimits=NULL,ylimits=NULL,cutDate=NULL){
   summaryRes<-runResults %>%
     group_by(time) %>%
     summarise(med = quantile(reportedEpi,probs=0.5),
-              mea = mean(reportedRaw),
+            #  mea = mean(reportedRaw),
               Q05 = quantile(reportedEpi,probs=0.05),
               Q25 = quantile(reportedEpi,probs=0.25),
               Q75 = quantile(reportedEpi,probs=0.75),
@@ -338,12 +342,12 @@ getSprinklePlotIQR<-function(runResults,xlimits=NULL,ylimits=NULL,cutDate=NULL){
   #obsLastDate<-(1+max(runResults[!is.na(runResults$ReEsti),"time"]))
   obsLastDate<-runResults[[1,"currentDay"]]-2
   if(is.null(ylimits)){
-    ylimits=c(0,max(runResults$reportedRaw))
+    ylimits=c(0,max(runResults$reportedEpi))
   }
   ggplot(runResults)+
     geom_line(data=subset(runResults,time>=cutDate),aes(x=time,y=reportedEpi,group=runNum),colour="#66666624")+
     geom_ribbon(data=summaryRes,
-                aes(x=time,ymin=Q25,ymax=Q75),fill="#00FF0050")+
+                aes(x=time,ymin=Q25,ymax=pmin(Q75,ylimits[[2]])),fill="#00FF0050")+
     geom_ribbon(data=summaryRes,
                 aes(x=time,ymin=Q05,ymax=pmin(Q95,ylimits[[2]])),fill="#00FF0033")+
     geom_step(data=subset(summaryRes,time<=cutDate),

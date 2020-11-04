@@ -253,6 +253,8 @@ extractRunInfo<-function(runResults){
                       apply(hospTimeline,2,function(x)quantile(x,probs = c(0.05,0.25,0.5,0.75,0.95))),
                       apply(ICUTimeline,2,mean),
                       apply(ICUTimeline,2,function(x)quantile(x,probs = c(0.05,0.25,0.5,0.75,0.95))),
+                      apply(ICUTimeline+hospTimeline,2,mean),
+                      apply(ICUTimeline+hospTimeline,2,function(x)quantile(x,probs = c(0.05,0.25,0.5,0.75,0.95))),
                       apply(hospInciTimeline,2,mean),
                       apply(hospInciTimeline,2,function(x)quantile(x,probs = c(0.05,0.25,0.5,0.75,0.95))),
                       apply(ICUTIncitimeline,2,mean),
@@ -266,6 +268,7 @@ extractRunInfo<-function(runResults){
     c("time",
       "hospTotalMean","hospTotal005","hospTotal025","hospTotal050","hospTotal075","hospTotal095",
       "icuTotalMean","icuTotal005","icuTotal025","icuTotal050","icuTotal075","icuTotal095",
+      "allTotalMean","allTotal005","allTotal025","allTotal050","allTotal075","allTotal095",
       "hospInciMean","hospInci005","hospInci025","hospInci050","hospInci075","hospInci095",
       "icuInciMean","icuInci005","icuInci025","icuInci050","icuInci075","icuInci095",
       "rrHosp","rrICU","rrInciHosp","rrInciICU"

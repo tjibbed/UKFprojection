@@ -88,7 +88,7 @@ reconstructBackwards<-function(curve,delayDistr,underreporting=1){
 }
 
 forwardInci<-function(R0,R0dev,popSize,serialDistr,runLength=150,caseStarter=c(0,1),underreporting=1){
-  print(caseStarter)
+ # print(caseStarter)
   startOffset=length(caseStarter)
   newCurve<-c(caseStarter,rep(0,runLength))
   devBeta<-R0dev/popSize
@@ -204,66 +204,81 @@ multiRtEsti<-function(epicurve,startDate,currentDay,delayRep,serialinterval,runL
   return(res)
 }
 
-singleRun<-function(epicurve,population,delayRep,serialinterval,runLength=150,underreporting=1){
+singleRun<-function(epicurve,
+                    population,
+                    delayRep,
+                    serialinterval,
+                    currentDay,
+                    runLength=150,
+                    underreporting=1,
+                    fixR=FALSE){
+ 
   starterCurve<-reconstructBackwards(epicurve,delayRep,underreporting=underreporting)
-  ReEsti<-as.numeric(produceRe(starterCurve,serialinterval))
+
+  ReEsti<-as.numeric(produceRe(starterCurve,serialinterval,currentDay)$ReEsti)
   ReEsti<-c(rep(0,-1+length(starterCurve)-length(ReEsti)),ReEsti,0)
   cStarter<-cumsum(starterCurve)
   ReEsti2<-ReEsti/(1-(cStarter/population))
   interc<-NA
   decl<-NA
-  
-  if(length(ReEsti)<7){#weighted average
+  m<-NULL
+ 
+   if(length(ReEsti)<7){#weighted average
     avRe<-sum(ReEsti2*starterCurve)/sum(starterCurve)
   } else {
-    avRe<-sum(ReEsti2[(length(ReEsti2)-7):(length(ReEsti2)-1)]*starterCurve[(length(ReEsti2)-7):(length(ReEsti2)-1)])/sum(starterCurve[(length(ReEsti2)-7):(length(ReEsti2)-1)])
+    avRe<-sum(ReEsti2[(length(ReEsti2)-8):(length(ReEsti2)-2)]*starterCurve[(length(ReEsti2)-8):(length(ReEsti2)-2)])/sum(starterCurve[(length(ReEsti2)-8):(length(ReEsti2)-2)])
   }
   lastR<-ReEsti2[length(ReEsti2)-1]
   
-  reDF<-subset(data.frame(
-    x=1:(length(ReEsti2)),
-    y=((ReEsti2)),
-    w=starterCurve
-  ),y!=0)
+  if(fixR) devR0<-rep(avRe,length(starterCurve)+runLength+1)
+  if(!fixR){
+    reDF<-subset(data.frame(
+      x=1:(length(ReEsti2)),
+      y=((ReEsti2)),
+      w=starterCurve
+    ),y!=0)
   
-  lmRes<-lm(reDF$x ~ log(reDF$y))
+    lmRes<-lm(reDF$x ~ log(reDF$y))
   
-  m<-tryCatch(
-    nls(y ~ exp(((x-b)*z)),start=list(b=coef(lmRes)[1],z=1/coef(lmRes)[2]),weights = w,data = reDF),
-    error=function(e) return(-1)
-  )
-  print(lmRes)
-  print(m)
-  if(!is.numeric(m)){
-    lastR0<-as.numeric(exp(((max(reDF$x)-coef(m)["b"])*coef(m)["z"])))
-    print(lastR0)
-    mNew<-tryCatch(
-      nls(y ~ a*exp(((x-max(x))*z)),start=list(a=lastR0,z=as.numeric(coef(m)["z"])),weights = w,data = reDF),
+    m<-tryCatch(
+      nls(y ~ exp(((x-b)*z)),start=list(b=coef(lmRes)[1],z=1/coef(lmRes)[2]),weights = w,data = reDF),
       error=function(e) return(-1)
     )
-    print(mNew)
-  } else {mNew<-(-1)}
-  if(!is.numeric(mNew)){
-    interc<-as.numeric(coef(mNew)["a"])
-    decl<-as.numeric(coef(mNew)["z"])
-  }
-  
-  if(!is.numeric(m)){
-    if((coef(m)["z"])>0){
-      #stop("Increasing Rt detected")
-      devR0<-rep(avRe,length(starterCurve)+runLength+1)
-    } else {
-      devR0<-exp(((1:(length(starterCurve)+runLength+1))-(coef(m)["b"]))*(coef(m)["z"]))
-      print(paste0("mean Re last week ",avRe))
+    print(lmRes)
+    print(m)
+    if(!is.numeric(m)){
+      lastR0<-as.numeric(exp(((max(reDF$x)-coef(m)["b"])*coef(m)["z"])))
+      print(lastR0)
+      mNew<-tryCatch(
+        nls(y ~ a*exp(((x-max(x))*z)),start=list(a=lastR0,z=as.numeric(coef(m)["z"])),weights = w,data = reDF),
+        error=function(e) return(-1)
+      )
+      print(mNew)
+    } else {mNew<-(-1)}
+    if(!is.numeric(mNew)){
+      interc<-as.numeric(coef(mNew)["a"])
+      decl<-as.numeric(coef(mNew)["z"])
     }
-    newCurve<-forwardInci(avRe,devR0,population,serialinterval,runLength=runLength,caseStarter=starterCurve,underreporting = underreporting)
-    newRepCurve<-convertCurveToReported(newCurve,delayRep,underreporting=underreporting,exclstarter=c(rep(0,length(delayRep)),epicurve),replaceStarter=F)
-  } else {
-    devR0<-0
-    newCurve<-c(starterCurve,rep(-1,runLength+1))
-    newRepCurve<-c(starterCurve,rep(-1,runLength+1))
+
+  if(!is.numeric(m)){
+    if(!fixR){
+      if((coef(m)["z"])>0){
+        #stop("Increasing Rt detected")
+        devR0<-rep(avRe,length(starterCurve)+runLength+1)
+      } else {
+        devR0<-exp(((1:(length(starterCurve)+runLength+1))-(coef(m)["b"]))*(coef(m)["z"]))
+        print(paste0("mean Re last week ",avRe))
+      }
+    }
+   } else {
+    devR0<-rep(0,length(starterCurve)+runLength+1)
   }
-  
+  }
+  print(avRe)
+  print(starterCurve)
+
+  newCurve<-forwardInci(avRe,devR0,population,serialinterval,runLength=runLength,caseStarter=starterCurve,underreporting = underreporting)
+  newRepCurve<-convertCurveToReported(newCurve,delayRep,underreporting=underreporting,exclstarter=c(rep(0,length(delayRep)),epicurve),replaceStarter=F)
   data.frame(
     ReEsti=c(0,(ReEsti),rep(0,runLength)),
     ReEsti2=c(0,(ReEsti2),rep(0,runLength)),
@@ -278,12 +293,12 @@ singleRun<-function(epicurve,population,delayRep,serialinterval,runLength=150,un
   )
 }
 
-singleRunFromHosp<-function(epicurve,population,delayRep,serialinterval,hospDelay,runLength=150,hospitalised=10,underreporting=1){
+singleRunFromHosp<-function(epicurve,population,delayRep,serialinterval,hospDelay,runLength=150,hospitalised=10,underreporting=1,fixR=FALSE){
   confEpiCurve<-reconstructBackwards(epicurve,hospDelay,underreporting=hospitalised)
-  return(singleRun(confEpiCurve,population,delayRep,serialinterval,runLength,underreporting))
+  return(singleRun(confEpiCurve,population,delayRep,serialinterval,runLength,underreporting,fixR = fixR))
 }
 
-multiInciRun<-function(epicurve,startDate,currentDay,population,delayRep,serialinterval,numRuns=125,runLength=150,underreporting=1) {
+multiInciRun<-function(epicurve,startDate,currentDay,population,delayRep,serialinterval,numRuns=125,runLength=150,underreporting=1,fixR=FALSE) {
   if((length(epicurve)+startDate)!=(currentDay-1)){
     if((length(epicurve)+startDate)>(currentDay-1)){
       epicurve<-epicurve[1:(as.numeric(difftime(currentDay,startDate))-1)]
@@ -294,7 +309,15 @@ multiInciRun<-function(epicurve,startDate,currentDay,population,delayRep,seriali
   if((length(epicurve)+startDate)!=(currentDay-1)) stop("This didn't fix it") 
     
   subset(Reduce(rbind,lapply(1:numRuns,function(x){
-    runres<-singleRun(epicurve,population,delayRep,serialinterval,runLength,underreporting=underreporting)
+    runres<-singleRun(epicurve,
+                      population,
+                      delayRep,
+                      serialinterval,
+                      currentDay,
+                      runLength,
+                      underreporting=underreporting,
+                      fixR=fixR)
+
     runres$runNum<-x
     runres$runPassed<-(sum(runres$devR0)!=0)
     runres$time<-startDate+(1:nrow(runres))-(length(delayRep))
@@ -361,7 +384,9 @@ readRKIpopLK<-function(){
 getInciForKreiseRKI<-function(l,popLK=NULL, fromDate=NULL,untilDate=NULL,loadData=FALSE){
   if(loadData){
     #https://npgeo-corona-npgeo-de.hub.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0/data?geometry=-31.470%2C46.269%2C52.378%2C55.886&selectedAttribute=cases7_per_100k
-    if(is.null(popLK)) popLK<-read.csv("https://opendata.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0.csv")
+    #if(is.null(popLK)) popLK<-read.csv("https://opendata.arcgis.com/datasets/917fc37a709542548cc3be077a786c17_0.csv")
+    if(is.null(popLK)) popLK<-read.csv("Resources/Kreisgrenzen_2017_mit_Einwohnerzahl.csv")
+    
   } else {
     if(is.null(popLK))stop("Please provide population data (popLK) and/or case data (dataRKI). Alternatively, set loadData=True to load data from RKI.")
   }
