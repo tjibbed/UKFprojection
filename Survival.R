@@ -157,7 +157,6 @@ getSurvParas<-function(ourPatients, lastDate){
 }
 
 selectModel<-function(expMod,wbMod){
-  
   if((expMod$AIC)<(wbMod$AIC)){
     print(paste0("Exponential selected. Relative likelihood: ",exp((wbMod$AIC- expMod$AIC)/2)))
     return(
@@ -172,47 +171,36 @@ selectModel<-function(expMod,wbMod){
   }
 }
 
+paraListEntry<-function(paraList,thisDate){
+  matchDates<-which(unlist(lapply(1:length(paraList),function(x){paraList[[x]]$lastDate==thisDate})))
+  if(length(matchDates)==0){
+    return(length(paraList))
+  } else {
+    return(matchDates[[1]])
+  }
+}
+
+selectModelOnDate<-function(paraList,thisDate,paraName){
+  listEntry<-paraListEntry(paraList,thisDate)
+  selectModel(paraList[[listEntry]][[paste0(paraName,"_exp")]],paraList[[listEntry]][[paste0(paraName,"_wb")]])
+}
+
+##### These specific functions should be replaced at the place they are used by their "selectModelOnDate" version:
 getDeltaHDistr<-function(paraList,thisDate){
-  listEntry<-which(unlist(lapply(1:length(paraList),function(x){paraList[[x]]$lastDate==thisDate})))[[1]]
-  disExp<-paraList[[listEntry]]$disGW1_exp
-  disWB<-paraList[[listEntry]]$disGW1_wb
-  return(selectModel(disExp,disWB))
+  return(selectModelOnDate(paraList,thisDate,"disGW1"))
 }
 getDeltaIDistr<-function(paraList,thisDate){
-  listEntry<-which(unlist(lapply(1:length(paraList),function(x){paraList[[x]]$lastDate==thisDate})))[[1]]
-  disExp<-paraList[[listEntry]]$disICU_exp
-  disWB<-paraList[[listEntry]]$disICU_wb
-  return(selectModel(disExp,disWB))
+  return(selectModelOnDate(paraList,thisDate,"disICU"))
 }
 getDeltaDDistr<-function(paraList,thisDate){
-  listEntry<-which(unlist(lapply(1:length(paraList),function(x){paraList[[x]]$lastDate==thisDate})))[[1]]
-  disExp<-paraList[[listEntry]]$disGW2_exp
-  disWB<-paraList[[listEntry]]$disGW2_wb
-  return(selectModel(disExp,disWB))
+  return(selectModelOnDate(paraList,thisDate,"disGW2"))
 }
-getDeltaHDistr<-function(paraList,thisDate){
-  listEntry<-which(unlist(lapply(1:length(paraList),function(x){paraList[[x]]$lastDate==thisDate})))[[1]]
-  disExp<-paraList[[listEntry]]$disGW1_exp
-  disWB<-paraList[[listEntry]]$disGW1_wb
-  return(selectModel(disExp,disWB))
-}
-getDeltaIDistr<-function(paraList,thisDate){
-  listEntry<-which(unlist(lapply(1:length(paraList),function(x){paraList[[x]]$lastDate==thisDate})))[[1]]
-  disExp<-paraList[[listEntry]]$disICU_exp
-  disWB<-paraList[[listEntry]]$disICU_wb
-  return(selectModel(disExp,disWB))
-}
+
 getAlphaIDistr<-function(paraList,thisDate){
-  listEntry<-which(unlist(lapply(1:length(paraList),function(x){paraList[[x]]$lastDate==thisDate})))[[1]]
-  disExp<-paraList[[listEntry]]$transfGW1_exp
-  disWB<-paraList[[listEntry]]$transfGW1_wb
-  return(selectModel(disExp,disWB))
+  return(selectModelOnDate(paraList,thisDate,"transfGW1"))
 }
 getAlphaDDistr<-function(paraList,thisDate){
-  listEntry<-which(unlist(lapply(1:length(paraList),function(x){paraList[[x]]$lastDate==thisDate})))[[1]]
-  disExp<-paraList[[listEntry]]$transfICU_exp
-  disWB<-paraList[[listEntry]]$transfICU_wb
-  return(selectModel(disExp,disWB))
+  return(selectModelOnDate(paraList,thisDate,"transfICU"))
 }
 
 getDateIndex<-function(paraList,thisDate){
