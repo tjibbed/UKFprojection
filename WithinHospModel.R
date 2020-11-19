@@ -218,7 +218,7 @@ getICUTimeline<-function(runResults){
 extractRunInfo<-function(runResults){
   hospTimeline<-Reduce(rbind,lapply(runResults,function(x){
     timeline=c()
-    for(it in 1:350){
+    for(it in 1:550){
       timeline<-c(timeline,sum(c(0,x$hospChangeEvent[(x$hospChangeEvent$time<it),"event"])))
     }
     return(timeline)
@@ -226,7 +226,7 @@ extractRunInfo<-function(runResults){
   
   hospInciTimeline<-Reduce(rbind,lapply(runResults,function(x){
     timeline=c()
-    for(it in 1:350){
+    for(it in 1:550){
       timeline<-c(timeline,length(c(x$hospChangeEvent[(x$hospChangeEvent$event==1)&(x$hospChangeEvent$time>it)&(x$hospChangeEvent$time<=(it+1)),"event"])))
     }
     return(timeline)
@@ -234,7 +234,7 @@ extractRunInfo<-function(runResults){
   
   ICUTimeline<-Reduce(rbind,lapply(runResults,function(x){
     timeline=c()
-    for(it in 1:350){
+    for(it in 1:550){
       timeline<-c(timeline,sum(c(0,x$ICUChangeEvent[(x$ICUChangeEvent$time<it),"event"])))
     }
     return(timeline)
@@ -242,13 +242,13 @@ extractRunInfo<-function(runResults){
   
   ICUTIncitimeline<-Reduce(rbind,lapply(runResults,function(x){
     timeline=c()
-    for(it in 1:350){
+    for(it in 1:550){
       timeline<-c(timeline,length(c(x$ICUChangeEvent[(x$ICUChangeEvent$event==1)&(x$ICUChangeEvent$time>it)&(x$ICUChangeEvent$time<=(it+1)),"event"])))
     }
     return(timeline)
   }))
   rrSelected=ceiling(runif(1)*nrow(hospTimeline))
-  resultInfo<-t(rbind(1:350,
+  resultInfo<-t(rbind(1:550,
                       apply(hospTimeline,2,mean),
                       apply(hospTimeline,2,function(x)quantile(x,probs = c(0.05,0.25,0.5,0.75,0.95))),
                       apply(ICUTimeline,2,mean),
@@ -307,7 +307,69 @@ getBedPredictionFixedPara<-function(lx){
 
 ######################################Late estimate running############################################
 
+getTimeLineFromCE<-function(ce,tlLength=NULL){
+  if(is.null(tlLength)){
+    tempDF<-data.frame(time=1:max(ce$time)+1,event=0,hosp=1)
+    tempCE<-rbind(ce,tempDF)
+  } else {
+    tempCE<-rbind(ce[ce$time<=tlLength,],data.frame(time=1:tlLength,event=0,hosp=1))
+  }
+  tempCE<-tempCE[order(tempCE$time),]
+  timelineTemp<-tempCE %>% 
+    group_by(time) %>%
+    summarise(
+      n=n(),
+      changes=sum(event)
+    ) %<>% mutate(
+      absolute=cumsum(changes)
+    )
+  return(timelineTemp)
+}
 
+getLOSdistr<-function(untilDate,numPatients=10000){
+  mypatsTemp<-createPatientsvLate(c(numPatients,0),
+                                  0,
+                                  (1-directICUProp),
+                                  directICUProp,
+                                  c(1,0),
+                                  selectModelOnDate(UKFparaList,untilDate,"transfGW1"),
+                                  selectModelOnDate(UKFparaList,untilDate,"transfICU"),
+                                  selectModelOnDate(UKFparaList,untilDate,"disGW1"),
+                                  selectModelOnDate(UKFparaList,untilDate,"disICU"),
+                                  selectModelOnDate(UKFparaList,untilDate,"disGW2")
+  )
+  
+  timelineTemp<-getTimeLineFromCE(rbind(mypatsTemp$hospChangeEvents,mypatsTemp$ICUChangeEvents))
+  resLOSdistr<-timelineTemp$absolute/numPatients
+  return(resLOSdistr)
+}
+
+admRateEstimator<-function(inciDF,bedObservations){
+  #inciDF is a data.frame with (at least) following variables:
+  # - Date : date of reporting
+  # - all  : number of reported cases, in all age classes 
+  
+  #bedObservations is a data.frame with columns:
+  # - Date : date of observation
+  # - ICU  : ICU beds occupied
+  # - GW   : General ward beds occupied
+  # - Hosp : All occupied beds in the hospital (GW+ICU)
+  theDistr<-getLOSdistr(max(bedObservations$Date))
+  # calculate the proportion admitted among all reported cases in the reversed LOS distribution for each "observed" day.
+  propAdmCalculator<-function(ddDate,ddHosp){
+    thisObsDate=which(inciDF$Date==ddDate)
+    calcLen<-min(thisObsDate-1,length(theDistr))
+    totalAdmPressure=sum(inciDF[((thisObsDate-calcLen)):(thisObsDate-1),"all"]*theDistr[calcLen:1])
+    return(ddHosp/totalAdmPressure)
+  }
+  #Begin calculating a week after the first case was reported.
+  inclBO<-bedObservations[(bedObservations$Date>(min(inciDF$Date)+6)),]
+  admProps<-unlist(lapply(1:nrow(inclBO),function(x)propAdmCalculator(inclBO[[x,"Date"]],inclBO[[x,"Hosp"]])))
+  
+  return(data.frame(Date=inclBO[,"Date"],
+                    admProps=admProps
+                      ))
+}
 
 getBedPrediction<-function(lx){
   #startDhere<-max(mrResList[[lx]][!is.na(mrResList[[lx]]$ReEsti),"time"])+1
@@ -318,6 +380,7 @@ getBedPrediction<-function(lx){
   if(startDhere>UKFparaList[[length(UKFparaList)]]$lastDate) startDhere<-UKFparaList[[length(UKFparaList)]]$lastDate
   
   admHospPart<-(max(cumsum(getRawAdm(UKFparaList,startDhere)$cases))/selectedKreise[selectedKreise$Date==startDhere,"all"])
+  
   directICUProp<-UKFparaList[[getDateIndex(UKFparaList,startDhere)]]$propDirectICU
 
   inHRunWSD<-withinHospitalMultiRunvLate(numRuns=100,mrResList[[lx]],

@@ -122,8 +122,12 @@ getBedShadedPlot<-function(runResults,startD=as.Date("2020-01-10"),plotAll=FALSE
     
     (if(!is.null(bothObs)) geom_point(data=subset(bothObs,time<=cutDate),aes(x=time,y=timelineICU),pch=21, size=2,color="black",fill="#FF0000FF"))+
     (if(!is.null(bothObs)) geom_point(data=subset(bothObs,time<=cutDate),aes(x=time,y=timelineGW),pch=21, size=2,color="black",fill="#0000FFFF"))+
+    (if((!is.null(bothObs))&plotAll) geom_point(data=subset(bothObs,time<=cutDate),aes(x=time,y=timelineGW+timelineICU),pch=21, size=2,color="black",fill="#000000FF"))+
+    
     (if(!is.null(bothObs)) geom_point(data=subset(bothObs,time>cutDate),aes(x=time,y=timelineICU),pch=21, size=2,color="#FF000080",fill="#00000000"))+
     (if(!is.null(bothObs)) geom_point(data=subset(bothObs,time>cutDate),aes(x=time,y=timelineGW),pch=21, size=2,color="#0000FF80",fill="#00000000"))+
+    (if((!is.null(bothObs))&plotAll) geom_point(data=subset(bothObs,time>cutDate),aes(x=time,y=timelineGW+timelineICU),pch=21, size=2,color="#00000080",fill="#00000000"))+
+    
     (if(!is.null(Hospobs)) geom_point(data=Hospobs,aes(x=time,y=obs),pch=21, size=2,color="black",fill="blue"))+
     (if(!is.null(ICUobs)) geom_point(data=ICUobs,aes(x=time,y=obs),pch=21, size=2,color="black",fill="red"))+
     scale_x_date(limits=xlimits)+
@@ -319,8 +323,32 @@ getReShadedPlot<-function(runResults,xlimits=NULL,ylimits=NULL){
                   ),fill="#0000FF44")+
   geom_line(aes(x=time,y=meanRe))+
   scale_y_continuous(limits=ylimits)+
+  (if(!is.null(xlimits))scale_x_date(limits=xlimits))+
   # geom_line(aes(x=time,y=medianRe),colour="blue")+
   theme_linedraw()
+}
+
+getReShadedPlotTwice<-function(runResults1,runResults2,xlimits=NULL,ylimits=NULL){
+  if(is.null(ylimits)){
+    ylimits=c(0,max(c(runResults$ReEsti,runResults$ReEsti)))
+  }
+  ggplot(as.data.frame(
+    runResults[(!is.na(runResults$ReEsti))&(runResults$underlying!=0),c("time","ReEsti")] %>% 
+      group_by(time)%>%
+      summarise(
+        meanRe=mean(ReEsti),
+        medianRe=median(ReEsti),
+        low=quantile(ReEsti,probs=0.05),
+        high=quantile(ReEsti,probs=0.95)
+      )
+  ))+
+    geom_ribbon(aes(x=time,ymin=low,ymax=pmin(high,ylimits[[2]])
+    ),fill="#0000FF44")+
+    geom_line(aes(x=time,y=meanRe))+
+    scale_y_continuous(limits=ylimits)+
+    (if(!is.null(xlimits))scale_x_date(limits=xlimits))+
+    # geom_line(aes(x=time,y=medianRe),colour="blue")+
+    theme_linedraw()
 }
 
 getSprinklePlotIQR<-function(runResults,xlimits=NULL,ylimits=NULL,cutDate=NULL){
