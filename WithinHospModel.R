@@ -454,11 +454,15 @@ createPatientsVaryAdmRate<-function(incidence,pLv,pN,pI,alphaH,alphaI,alphaD,del
                                       function(x){
                                         if(incidence[x]!=0)
                                           {
-                                          if(x>length(pLv)) pullPatients(incidence[x],1-pLv[length(pLv)],x)
-                                          if(x<=length(pLv)) pullPatients(incidence[x],1-pLv[x],x)
+                                          if(x>length(pLv)){
+                                            return(pullPatients(incidence[x],1-pLv[length(pLv)],x))
+                                          } else {
+                                            if(x<=length(pLv)) return(pullPatients(incidence[x],1-pLv[x],x))
+                                           
+                                          }
                                           }
                                         else {
-                                          data.frame(tAH=1,tAI=1,tAD=1,tDH=1,tDI=1,tDD=1,hospStay=1,ICUstay=1,stepStay=1,type="L",hosp=-1,day=x)
+                                          return(data.frame(tAH=1,tAI=1,tAD=1,tDH=1,tDI=1,tDD=1,hospStay=1,ICUstay=1,stepStay=1,type="L",hosp=-1,day=x))
                                         }
                                       }
   )
