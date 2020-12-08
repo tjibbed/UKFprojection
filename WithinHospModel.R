@@ -427,7 +427,7 @@ createPatientsVaryAdmRate<-function(incidence,pLv,pN,pI,alphaH,alphaI,alphaD,del
     tDH<-sample(1:(length(deltaH)),nPat,prob = deltaH,replace = T)
     tDI<-sample(1:(length(deltaI)),nPat,prob = deltaI,replace = T)
     tDD<-sample(1:(length(deltaD)),nPat,prob = deltaD,replace = T)
-    
+
     timeDF<-data.frame(tAH,tAI,tAD,tDH,tDI,tDD,hospStay<-1,ICUstay<-1,stepStay<-1,type<-1)
     
     pType<-       # H I D H I D H I D 
@@ -453,7 +453,10 @@ createPatientsVaryAdmRate<-function(incidence,pLv,pN,pI,alphaH,alphaI,alphaD,del
   allActualTimes<-Reduce(rbind,lapply(1:length(incidence),
                                       function(x){
                                         if(incidence[x]!=0)
-                                        {pullPatients(incidence[x],1-pLv[x],x)}
+                                          {
+                                          if(x>length(pLv)) pullPatients(incidence[x],1-pLv[length(pLv)],x)
+                                          if(x<=length(pLv)) pullPatients(incidence[x],1-pLv[x],x)
+                                          }
                                         else {
                                           data.frame(tAH=1,tAI=1,tAD=1,tDH=1,tDI=1,tDD=1,hospStay=1,ICUstay=1,stepStay=1,type="L",hosp=-1,day=x)
                                         }
