@@ -338,8 +338,7 @@ readLandKreisNames<-function(){
   return(LKcodes)
 }
 
-readRKIdataSingleLK<-function(LK){#Loading a single Landkreis
-
+translateLKNametoCode<-function(LK){
   if(!(LK %in% LKcodes$AGS)){
     found=FALSE
     if(LK %in% LKcodes$GEN){
@@ -360,11 +359,19 @@ readRKIdataSingleLK<-function(LK){#Loading a single Landkreis
     }
     if(!found) stop(paste0("Didn't find identifier: ",LK)) 
   }
+  return(LK)
+}
+
+readRKIdataSingleLK<-function(LK){#Loading a single Landkreis
+  
+  print(LK)
+  
   RKIgot<-GET(paste0("https://services7.arcgis.com/mOBPykOjAyBO2ZKk/arcgis/rest/services/RKI_COVID19/FeatureServer/0/query?where=IdLandkreis%20%3D%20'",
                      LK,
                      "'&outFields=*&outSR=4326&f=json"))
   tempRKIdataJSON<-fromJSON(content(RKIgot,"text"))
   tempDF<-as.data.frame(tempRKIdataJSON$features$attributes)
+
   tempDF$Meldedatum<-as.Date("1970-01-01")+(tempDF$Meldedatum/(3600*24*1000))
   tempDF$Refdatum<-as.Date("1970-01-01")+(tempDF$Refdatum/(3600*24*1000))
   tempDF$Datenstand<-as.Date(substr(tempDF$Datenstand,0,10),format="%d.%m.%Y")
@@ -373,7 +380,8 @@ readRKIdataSingleLK<-function(LK){#Loading a single Landkreis
 }
 
 readRKIdatamultiLK<-function(LKs){#Loading multiple Landkreis
-  Reduce(rbind,lapply(LKs,readRKIdataSingleLK))
+  LKcodes<-unlist(lapply(LKs,translateLKNametoCode))
+  Reduce(rbind,lapply(LKcodes,readRKIdataSingleLK))
 }
 
 readRKIpopLK<-function(){
@@ -391,7 +399,9 @@ getInciForKreiseRKI<-function(l,popLK=NULL, fromDate=NULL,untilDate=NULL,loadDat
     if(is.null(popLK))stop("Please provide population data (popLK) and/or case data (dataRKI). Alternatively, set loadData=True to load data from RKI.")
   }
   thisSet<-readRKIdatamultiLK(l)
+  
   totPop<-sum(unlist(lapply(unique(thisSet$IdLandkreis), function(x) ((popLK[!is.na(popLK$AGS),"EWZ"][popLK[!is.na(popLK$AGS),"AGS"]==as.numeric(x)])))))
+
 
   RKIinci<-as.data.frame(
     thisSet%>% 
@@ -409,6 +419,7 @@ getInciForKreiseRKI<-function(l,popLK=NULL, fromDate=NULL,untilDate=NULL,loadDat
   ))
   
   RKIinciTempList$cLastweek<-c(rep(0,6),unlist(lapply(7:nrow(RKIinciTempList),function(x)sum(RKIinciTempList[x-0:6,"all"]))))
+  RKIinciTempList$smooth<-compensateWeekRythm(RKIinciTempList$all)
   RKIinciTempList$RKIcut<-100000*(RKIinciTempList$cLastweek/totPop)
   RKIinciTempList$thisPop<-totPop
   return(RKIinciTempList)
