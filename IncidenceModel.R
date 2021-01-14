@@ -369,12 +369,13 @@ translateLKNametoCode<-function(LK){
 readRKIdataSingleLK<-function(LK,offline=F){#Loading a single Landkreis
   print(LK)
   if(offline){
+    warning("Using offline database, update manually!")
     if(!exists("offlineRKIDF")){
       print("Loading offline RKI database")
       offlineRKIDFtemp<-read.csv("Resources/RKI_COVID19.csv")
       offlineRKIDFtemp$IdLandkreis<-str_pad(as.character(offlineRKIDFtemp$IdLandkreis),5,side="left",pad="0")
-      offlineRKIDFtemp$Meldedatum<-as.Date(substr(offlineRKIDFtemp$Meldedatum,0,10),format="%d/%m/%Y")
-      offlineRKIDFtemp$Refdatum<-as.Date(substr(offlineRKIDFtemp$Refdatum,0,10),format="%d/%m/%Y")
+      offlineRKIDFtemp$Meldedatum<-as.Date(substr(offlineRKIDFtemp$Meldedatum,0,10),format="%Y/%m/%d")
+      offlineRKIDFtemp$Refdatum<-as.Date(substr(offlineRKIDFtemp$Refdatum,0,10),format="%Y/%m/%d")
       offlineRKIDFtemp$Datenstand<-as.Date(substr(offlineRKIDFtemp$Datenstand,0,10),format="%d.%m.%Y")
       assign("offlineRKIDF", offlineRKIDFtemp, envir=globalenv())
     }
