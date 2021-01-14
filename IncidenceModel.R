@@ -329,10 +329,14 @@ multiInciRun<-function(epicurve,startDate,currentDay,population,delayRep,seriali
   })),runPassed==TRUE)
 }
 
-readLandKreisNames<-function(){
-  httr::set_config(httr::config(http_version = 0))
-  RKIgotKreise<-GET("https://services7.arcgis.com/mOBPykOjAyBO2ZKk/arcgis/rest/services/RKI_Landkreisdaten/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=false&outSR=4326&f=json")
-  tempLKdata<-as.data.frame(fromJSON(content(RKIgotKreise,"text"))$features$attributes)
+readLandKreisNames<-function(offline=F){
+  if(!offline){
+    httr::set_config(httr::config(http_version = 0))
+    RKIgotKreise<-GET("https://services7.arcgis.com/mOBPykOjAyBO2ZKk/arcgis/rest/services/RKI_Landkreisdaten/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=false&outSR=4326&f=json")
+    tempLKdata<-as.data.frame(fromJSON(content(RKIgotKreise,"text"))$features$attributes)
+  } else {
+    tempLKdata<-as.data.frame(fromJSON(read_file("Resources/Kreise-download-210114.json"))$features$attributes)
+  }
   LKcodes=unique(tempLKdata[,c("GEN","AGS")])
   LKcodes<<-(LKcodes[!is.na(LKcodes$AGS),])
   return(LKcodes)
@@ -362,20 +366,30 @@ translateLKNametoCode<-function(LK){
   return(LK)
 }
 
-readRKIdataSingleLK<-function(LK){#Loading a single Landkreis
-  
+readRKIdataSingleLK<-function(LK,offline=F){#Loading a single Landkreis
   print(LK)
-  
-  RKIgot<-GET(paste0("https://services7.arcgis.com/mOBPykOjAyBO2ZKk/arcgis/rest/services/RKI_COVID19/FeatureServer/0/query?where=IdLandkreis%20%3D%20'",
+  if(offline){
+    if(!exists("offlineRKIDF")){
+      print("Loading offline RKI database")
+      offlineRKIDFtemp<-read.csv("Resources/RKI_COVID19.csv")
+      offlineRKIDFtemp$IdLandkreis<-str_pad(as.character(offlineRKIDFtemp$IdLandkreis),5,side="left",pad="0")
+      offlineRKIDFtemp$Meldedatum<-as.Date(substr(offlineRKIDFtemp$Meldedatum,0,10),format="%d/%m/%Y")
+      offlineRKIDFtemp$Refdatum<-as.Date(substr(offlineRKIDFtemp$Refdatum,0,10),format="%d/%m/%Y")
+      offlineRKIDFtemp$Datenstand<-as.Date(substr(offlineRKIDFtemp$Datenstand,0,10),format="%d.%m.%Y")
+      assign("offlineRKIDF", offlineRKIDFtemp, envir=globalenv())
+    }
+    tempDF<-offlineRKIDF[offlineRKIDF$IdLandkreis==LK,]
+  }else {
+    RKIgot<-GET(paste0("https://services7.arcgis.com/mOBPykOjAyBO2ZKk/arcgis/rest/services/RKI_COVID19/FeatureServer/0/query?where=IdLandkreis%20%3D%20'",
                      LK,
                      "'&outFields=*&outSR=4326&f=json"))
-  tempRKIdataJSON<-fromJSON(content(RKIgot,"text"))
-  tempDF<-as.data.frame(tempRKIdataJSON$features$attributes)
-
-  tempDF$Meldedatum<-as.Date("1970-01-01")+(tempDF$Meldedatum/(3600*24*1000))
-  tempDF$Refdatum<-as.Date("1970-01-01")+(tempDF$Refdatum/(3600*24*1000))
-  tempDF$Datenstand<-as.Date(substr(tempDF$Datenstand,0,10),format="%d.%m.%Y")
-  #print(as.Date("1970-01-01")+max(RKIinci$Meldedatum)/(3600*24*1000))
+    tempRKIdataJSON<-fromJSON(content(RKIgot,"text"))
+    tempDF<-as.data.frame(tempRKIdataJSON$features$attributes)
+  
+    tempDF$Meldedatum<-as.Date("1970-01-01")+(tempDF$Meldedatum/(3600*24*1000))
+    tempDF$Refdatum<-as.Date("1970-01-01")+(tempDF$Refdatum/(3600*24*1000))
+    tempDF$Datenstand<-as.Date(substr(tempDF$Datenstand,0,10),format="%d.%m.%Y")
+  }
   return(tempDF)
 }
 
